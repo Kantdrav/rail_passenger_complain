@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.optim as optim
 from PIL import Image
+import torch.nn.functional as F
 
 # -----------------------------
 # Step 0: Cleanup corrupted images
@@ -109,9 +110,15 @@ img = transform(img).unsqueeze(0)
 model.eval()
 with torch.no_grad():
     pred = model(img)
-    class_idx = torch.argmax(pred, dim=1).item()
-    class_name = dataset.classes[class_idx]
-    print("Forward to:", class_name)
+    probs = F.softmax(pred, dim=1)  # probabilities
+    top_p, top_class = torch.max(probs, 1)
+
+    print("Prediction:", dataset.classes[top_class.item()],
+          f"(confidence {top_p.item()*100:.2f}%)")
+
+    print("All probabilities:")
+    for cls, p in zip(dataset.classes, probs[0]):
+        print(f"  {cls}: {p.item()*100:.2f}%")
 
 # -----------------------------
 # Step 8: Evaluate accuracy
