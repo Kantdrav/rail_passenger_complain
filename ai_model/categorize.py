@@ -56,7 +56,7 @@ for epoch in range(5):
 # Step 6: Predict new image
 # -----------------------------
 # Use the correct path to your image
-image = "/home/kantdravi/Desktop/rail/rail_madad/images/image.png"
+image = "/home/kantdravi/Desktop/rail_passenger_complain/ai_model/images/image.png"
 if not os.path.exists(image):
     raise FileNotFoundError(f"Image not found: {image}")
 
@@ -69,3 +69,36 @@ with torch.no_grad():
     class_idx = torch.argmax(pred, dim=1).item()
     class_name = dataset.classes[class_idx]
     print("Forward to:", class_name)
+
+# -----------------------------
+# Step 7: Evaluate accuracy
+# -----------------------------
+def evaluate(model, loader):
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for inputs, labels in loader:
+            outputs = model(inputs)
+            _, predicted = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+    return 100 * correct / total
+
+train_acc = evaluate(model, train_loader)
+test_acc = evaluate(model, test_loader)
+
+print(f"Train Accuracy: {train_acc:.2f}%")
+print(f"Test Accuracy: {test_acc:.2f}%")
+
+# -----------------------------
+# Step 8: Save model + classes
+# -----------------------------
+save_path = os.path.join(os.path.dirname(__file__), "model.pth")
+torch.save({
+    "model_state": model.state_dict(),
+    "classes": dataset.classes
+}, save_path)
+
+print(f"✅ Model trained and saved as {save_path}")
+# -----------------------------
