@@ -42,7 +42,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 # -----------------------------
 # Step 5: Train model
 # -----------------------------
-for epoch in range(5):
+for epoch in range(10):
     model.train()
     for inputs, labels in train_loader:
         optimizer.zero_grad()
