@@ -8,17 +8,58 @@ import torch.optim as optim
 from PIL import Image
 
 # -----------------------------
-# Step 1: Transform images
+# Step 0: Cleanup corrupted images
+# -----------------------------
+dataset_root = "dataset"
+
+for root, _, files in os.walk(dataset_root):
+    for file in files:
+        fpath = os.path.join(root, file)
+        try:
+            img = Image.open(fpath)
+            img.verify()  # Check if it's a valid image
+        except Exception as e:
+            print(f"❌ Bad file removed: {fpath} ({e})")
+            os.remove(fpath)
+
+# -----------------------------
+# Step 1: Define transforms
 # -----------------------------
 transform = transforms.Compose([
-    transforms.Resize((224,224)),
+    transforms.Resize((224, 224)),
     transforms.ToTensor(),
 ])
 
 # -----------------------------
-# Step 2: Load dataset
+# Step 2: Safe dataset loader
 # -----------------------------
-dataset = datasets.ImageFolder("dataset", transform=transform)
+class SafeImageFolder(datasets.ImageFolder):
+    def __init__(self, root, transform=None):
+        super().__init__(root, transform)
+        # Filter out unreadable images during initialization
+        good_imgs = []
+        for path, label in self.samples:
+            try:
+                img = Image.open(path)
+                img.verify()
+                good_imgs.append((path, label))
+            except Exception as e:
+                print(f"❌ Removing bad file: {path} ({e})")
+        self.samples = good_imgs
+        self.imgs = self.samples
+
+    def __getitem__(self, index):
+        try:
+            return super().__getitem__(index)
+        except Exception as e:
+            print(f"⚠️ Skipping bad file at index {index}: {self.imgs[index][0]} ({e})")
+            return torch.zeros(3, 224, 224), 0  # Dummy tensor and label
+
+dataset = SafeImageFolder(dataset_root, transform=transform)
+
+# -----------------------------
+# Step 3: Split dataset
+# -----------------------------
 train_size = int(0.8 * len(dataset))
 test_size = len(dataset) - train_size
 train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
@@ -27,41 +68,43 @@ train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
 # -----------------------------
-# Step 3: Use pretrained model
+# Step 4: Load pretrained model
 # -----------------------------
-model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)  # Updated per torchvision warning
+model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
 num_features = model.fc.in_features
-model.fc = nn.Linear(num_features, len(dataset.classes))  # Automatically handle number of classes
+model.fc = nn.Linear(num_features, len(dataset.classes))
 
 # -----------------------------
-# Step 4: Loss and optimizer
+# Step 5: Loss and optimizer
 # -----------------------------
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # -----------------------------
-# Step 5: Train model
+# Step 6: Train model
 # -----------------------------
 for epoch in range(10):
     model.train()
+    running_loss = 0.0
     for inputs, labels in train_loader:
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
-    print(f"Epoch {epoch+1} completed")
+        running_loss += loss.item()
+    print(f"Epoch {epoch+1} completed, Loss: {running_loss/len(train_loader):.4f}")
 
 # -----------------------------
-# Step 6: Predict new image
+# Step 7: Predict new image
 # -----------------------------
-# Use the correct path to your image
-image = "/home/kantdravi/Desktop/rail_passenger_complain/ai_model/images/image.png"
-if not os.path.exists(image):
-    raise FileNotFoundError(f"Image not found: {image}")
+image_path = "/home/kantdravi/Desktop/rail_passenger_complain/ai_model/images/image.png"
 
-img = Image.open(image).convert('RGB')
-img = transform(img).unsqueeze(0)  # Add batch dimension
+if not os.path.exists(image_path):
+    raise FileNotFoundError(f"Image not found: {image_path}")
+
+img = Image.open(image_path).convert('RGB')
+img = transform(img).unsqueeze(0)
 
 model.eval()
 with torch.no_grad():
@@ -71,7 +114,7 @@ with torch.no_grad():
     print("Forward to:", class_name)
 
 # -----------------------------
-# Step 7: Evaluate accuracy
+# Step 8: Evaluate accuracy
 # -----------------------------
 def evaluate(model, loader):
     model.eval()
@@ -92,7 +135,7 @@ print(f"Train Accuracy: {train_acc:.2f}%")
 print(f"Test Accuracy: {test_acc:.2f}%")
 
 # -----------------------------
-# Step 8: Save model + classes
+# Step 9: Save model + classes
 # -----------------------------
 save_path = os.path.join(os.path.dirname(__file__), "model.pth")
 torch.save({
@@ -101,4 +144,3 @@ torch.save({
 }, save_path)
 
 print(f"✅ Model trained and saved as {save_path}")
-# -----------------------------
